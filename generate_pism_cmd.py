@@ -5,7 +5,6 @@
 
 import os
 import sys
-import itertools
 from collections import OrderedDict
 try:
     import subprocess32 as sub
@@ -145,10 +144,11 @@ def generate_pism_cmd(*args, **kwargs):
                         for k in np.arange(start_year + exstep, end_year, exstep)])
     myoutfile = extra_file + '.nc'
     myoutfile = os.path.join(outdir, spatial_dir, os.path.split(myoutfile)[-1])
-    cmd_1 = ' '.join(['ncrcat -O -6 -h', myfiles, myoutfile, '\n'])
+    cmd_1 = ' '.join(['ncrcat -O -6 -h', myfiles, myoutfile])
     cmd_2 = ' '.join(['ncks -O -4', os.path.join(outdir, state_dir, outfile),
-                      os.path.join(outdir, state_dir, outfile), '\n'])
+                      os.path.join(outdir, state_dir, outfile)])
     post_cmd = '\n'.join([cmd_1, cmd_2])
+    post_cmd = post_cmd+'\n'
 
     return pism_cmd, post_cmd
 
