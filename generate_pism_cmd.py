@@ -64,16 +64,21 @@ def generate_pism_cmd(*args, **kwargs):
 
     # stress balance
     stress_balance_params_dict = OrderedDict()
-    stress_balance_params_dict['ssa_e'] = params.read('ssa_e', 'float')
-    stress_balance_params_dict['pseudo_plastic'] = ''
-    stress_balance_params_dict['pseudo_plastic_q'] = params.read('pseudo_plastic_q', 'float')
-    stress_balance_params_dict['till_effective_fraction_overburden'] = params.read('till_effective_fraction_overburden', 'float')
-    stress_balance_params_dict['plastic_phi'] = params.read('plastic_phi', 'float')
-    stress_balance_params_dict['ssafd_ksp_divtol'] = 1e300
-    stress_balance_params_dict['cfbc'] = ''
-    stress_balance_params_dict['ssa_method'] = 'fd'
-    #stress_balance_params_dict['bed_smoother_range'] = 50
+    stress_balance = params.read('stress_balance', 'str')
+    stress_balance_params_dict = stress_balance
+    # sia
     stress_balance_params_dict['sia_flow_law'] = 'gpbld3'
+    # ssa
+    if stress_balance == 'ssa+sia':
+        stress_balance_params_dict['ssa_e'] = params.read('ssa_e', 'float')
+        stress_balance_params_dict['pseudo_plastic'] = ''
+        stress_balance_params_dict['pseudo_plastic_q'] = params.read('pseudo_plastic_q', 'float')
+        stress_balance_params_dict['till_effective_fraction_overburden'] = params.read('till_effective_fraction_overburden', 'float')
+        stress_balance_params_dict['plastic_phi'] = params.read('plastic_phi', 'float')
+        stress_balance_params_dict['ssa_method'] = 'fd'
+        #stress_balance_params_dict['ssafd_ksp_divtol'] = 1e300
+        #stress_balance_params_dict['cfbc'] = ''
+        #stress_balance_params_dict['bed_smoother_range'] = 50
 
     # climate
     air_temp_mean_annual = params.read('air_temp_mean_annual', 'float')
