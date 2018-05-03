@@ -65,7 +65,7 @@ def generate_pism_cmd(*args, **kwargs):
     # stress balance
     stress_balance_params_dict = OrderedDict()
     stress_balance = params.read('stress_balance', 'str')
-    stress_balance_params_dict = stress_balance
+    stress_balance_params_dict['stress_balance'] = stress_balance
     # sia
     stress_balance_params_dict['sia_flow_law'] = 'gpbld3'
     # ssa
