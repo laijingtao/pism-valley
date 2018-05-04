@@ -26,10 +26,14 @@ def generate_pism_cmd(*args, **kwargs):
     pism_prefix = 'pismr'
 
     system = params.read('system')
+    cores = params.read('cores', 'int')
+    walltime = params.read('walltime', 'str')
     if system in ['keeling']:
         pism_data_dir = os.environ['PISM_DATA_DIR']
     else:
         pism_data_dir = './'
+    batch_system = make_batch_header(system, cores, walltime)
+
     outdir = params.read('outdir')
     outdir = os.path.join(pism_data_dir, outdir)
     state_dir = 'state'
@@ -55,7 +59,7 @@ def generate_pism_cmd(*args, **kwargs):
     outfile = params.read('outfile', 'str')
     general_params_dict['ys'] = start_year
     general_params_dict['ye'] = end_year
-    general_params_dict['o'] = outfile
+    general_params_dict['o'] = os.path.join(outdir, state_dir, outfile)
     general_params_dict['o_format'] = params.read('o_format', 'str')
     general_params_dict['o_size'] = params.read('o_size', 'str')
     general_params_dict['options_left'] = ''
@@ -67,10 +71,13 @@ def generate_pism_cmd(*args, **kwargs):
     stress_balance = params.read('stress_balance', 'str')
     stress_balance_params_dict['stress_balance'] = stress_balance
     # sia
-    stress_balance_params_dict['sia_flow_law'] = 'gpbld3'
+    #stress_balance_params_dict['sia_flow_law'] = 'gpbld3' # Note: gpbld3 will trigger KSP solver error
+    stress_balance_params_dict['sia_e'] = params.read('sia_e', 'float')
+    stress_balance_params_dict['sia_n'] = 3.0
     # ssa
     if stress_balance == 'ssa+sia':
         stress_balance_params_dict['ssa_e'] = params.read('ssa_e', 'float')
+        stress_balance_params_dict['ssa_n'] = 3.0
         stress_balance_params_dict['pseudo_plastic'] = ''
         stress_balance_params_dict['pseudo_plastic_q'] = params.read('pseudo_plastic_q', 'float')
         stress_balance_params_dict['till_effective_fraction_overburden'] = params.read('till_effective_fraction_overburden', 'float')
@@ -100,13 +107,14 @@ def generate_pism_cmd(*args, **kwargs):
     temp_lapse_rate = params.read('temp_lapse_rate', 'float')
     ice_density = 910.
     climate_params_dict = OrderedDict()
-    climate_params_dict['atmosphere'] = 'yearly_cycle,lapse_rate'
+    climate_params_dict['surface'] = 'pdd'
     climate_params_dict['surface.pdd.factor_ice'] = 4.59 / ice_density  # Shea et al (2009)
     climate_params_dict['surface.pdd.factor_snow'] = 3.04 / ice_density  # Shea et al (2009)
     climate_params_dict['surface.pdd.refreeze'] = 0
-    climate_params_dict['atmosphere_yearly_cycle_file'] = climate_file,
-    climate_params_dict['atmosphere_lapse_rate_file'] = climate_file,
-    climate_params_dict['temp_lapse_rate'] = temp_lapse_rate,
+    climate_params_dict['atmosphere'] = 'yearly_cycle,lapse_rate'
+    climate_params_dict['atmosphere_yearly_cycle_file'] = climate_file
+    climate_params_dict['atmosphere_lapse_rate_file'] = climate_file
+    climate_params_dict['temp_lapse_rate'] = temp_lapse_rate
     #climate_params_dict['atmosphere_delta_T_file'] = atmosphere_paleo_file,
     #climate_params_dict['atmosphere_frac_P_file'] = atmosphere_paleo_file
 
@@ -139,10 +147,9 @@ def generate_pism_cmd(*args, **kwargs):
                                   scalar_ts_dict)
     all_params = ' '.join([' '.join(['-' + k, str(v)]) for k, v in all_params_dict.items()])
 
-    cores = params.read('cores', 'int')
     mpido = 'mpirun -np {cores}'.format(cores=cores)
     pism_cmd = ' '.join([mpido, pism_prefix, all_params,
-                         '> {outdir}/log_${outfile} 2>&1'.format(outdir=outdir, outfile=outfile), '\n'])
+                         '> {outdir}/log_{outfile}.log 2>&1'.format(outdir=outdir, outfile=outfile), '\n'])
 
     extra_file = spatial_ts_dict['extra_file']
     myfiles = ' '.join(['{}_{:.3f}.nc'.format(extra_file, k) \
@@ -310,6 +317,30 @@ def generate_scalar_ts(outfile, step, start=None, end=None, odir=None):
     params_dict['ts_times'] = times
 
     return params_dict
+
+def make_batch_header(system, cores, walltime):
+    batch_system_list = {}
+
+    batch_system_list['debug'] = {'job_id': 'test'}
+    batch_system_list['debug']['header'] = '#!/bin/bash'
+
+    batch_system_list['keeling'] = {'job_id': 'SLURM_JOBID'}
+    header = """#!/bin/bash
+#SBATCH -n {cores}
+#SBATCH --mem-per-cpu=4096
+#SBATCH --time={walltime}
+#SBATCH --mail-user=jlai11@illinois.edu
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --export=PATH,LD_LIBRARY_PATH
+
+module list
+cd $SLURM_SUBMIT_DIR
+""".format(cores=cores, walltime=walltime)
+    batch_system_list['keeling']['header'] = header
+
+    return batch_system_list[system]
+
 
 if __name__ == '__main__':
     pism_cmd, post_cmd = generate_pism_cmd(params_file='test_params.txt')
