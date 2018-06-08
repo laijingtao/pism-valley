@@ -23,7 +23,10 @@ def generate_pism_cmd(*args, **kwargs):
     params_file = kwargs['params_file']
     params = ParamParser(params_file)
 
-    pism_prefix = 'pismr'
+    try:
+        pism_exec = os.path.join(os.environ['PISM_PREFIX'], 'pismr')
+    except:
+        pism_exec = 'pismr'
 
     system = params.read('system')
     cores = params.read('cores', 'int')
@@ -32,7 +35,7 @@ def generate_pism_cmd(*args, **kwargs):
         pism_data_dir = os.environ['PISM_DATA_DIR']
     else:
         pism_data_dir = './'
-    batch_system = make_batch_header(system, cores, walltime)
+    header = make_batch_header(system, cores, walltime)
 
     outdir = params.read('outdir')
     outdir = os.path.join(pism_data_dir, outdir)
@@ -56,12 +59,13 @@ def generate_pism_cmd(*args, **kwargs):
         general_params_dict['bootstrap'] = ''
     start_year = params.read('start_year', 'float')
     end_year = params.read('end_year', 'float')
-    outfile = params.read('outfile', 'str')
+    outfile = generate_outfile_name(params)
+    outfile_base = os.path.splitext(outfile)[0]
     general_params_dict['ys'] = start_year
     general_params_dict['ye'] = end_year
     general_params_dict['o'] = os.path.join(outdir, state_dir, outfile)
-    general_params_dict['o_format'] = params.read('o_format', 'str')
-    general_params_dict['o_size'] = params.read('o_size', 'str')
+    general_params_dict['o_format'] = 'netcdf4_parallel'
+    general_params_dict['o_size'] = 'medium'
     general_params_dict['options_left'] = ''
 
     grid_params_dict = generate_grid_description(start_file, bootstrap)
@@ -72,8 +76,13 @@ def generate_pism_cmd(*args, **kwargs):
     stress_balance_params_dict['stress_balance'] = stress_balance
     # sia
     #stress_balance_params_dict['sia_flow_law'] = 'gpbld3' # Note: gpbld3 will trigger KSP solver error
-    stress_balance_params_dict['sia_e'] = params.read('sia_e', 'float')
+    stress_balance_params_dict['sia_flow_law'] = 'gpbld'
     stress_balance_params_dict['sia_n'] = 3.0
+    stress_balance_params_dict['sia_e'] = params.read('sia_e', 'float')
+    stress_balance_params_dict['bed_smoother_range'] = 0
+    # sia_sliding
+    if stress_balance == 'weertman_sliding+sia':
+        stress_balance_params_dict['stress_balance.weertman_sliding.f'] = params.read('f_sliding', 'float')
     # ssa
     if stress_balance == 'ssa+sia':
         stress_balance_params_dict['ssa_e'] = params.read('ssa_e', 'float')
@@ -85,13 +94,12 @@ def generate_pism_cmd(*args, **kwargs):
         stress_balance_params_dict['ssa_method'] = 'fd'
         #stress_balance_params_dict['ssafd_ksp_divtol'] = 1e300
         #stress_balance_params_dict['cfbc'] = ''
-        #stress_balance_params_dict['bed_smoother_range'] = 50
 
     # climate
     air_temp_mean_annual = params.read('air_temp_mean_annual', 'float')
     air_temp_mean_july = air_temp_mean_annual+5
     precipitation = params.read('precipitation', 'float')
-    climate_file = os.path.join(outdir, initial_dir, 'climate_'+outfile)
+    climate_file = os.path.join(outdir, initial_dir, 'climate_{}.nc'.format(outfile_base))
     #atmosphere_paleo_file = os.path.join(outdir, initial_dir, 'paleo_modifier_'+outfile)
     build_constant_climate(infile=start_file,
                            outfile=climate_file,
@@ -148,21 +156,39 @@ def generate_pism_cmd(*args, **kwargs):
     all_params = ' '.join([' '.join(['-' + k, str(v)]) for k, v in all_params_dict.items()])
 
     mpido = 'mpirun -np {cores}'.format(cores=cores)
-    pism_cmd = ' '.join([mpido, pism_prefix, all_params,
-                         '> {outdir}/log_{outfile}.log 2>&1'.format(outdir=outdir, outfile=outfile), '\n'])
+    pism_cmd = ' '.join([mpido, pism_exec, all_params, '>',
+                         os.path.join(outdir, 'log_{}.log 2>&1'.format(outfile_base)), '\n'])
 
     extra_file = spatial_ts_dict['extra_file']
-    myfiles = ' '.join(['{}_{:.3f}.nc'.format(extra_file, k) \
+    tmp_files = ' '.join(['{}_{:.3f}.nc'.format(extra_file, k) \
                         for k in np.arange(start_year + exstep, end_year, exstep)])
-    myoutfile = extra_file + '.nc'
-    myoutfile = os.path.join(outdir, spatial_dir, os.path.split(myoutfile)[-1])
-    cmd_1 = ' '.join(['ncrcat -O -6 -h', myfiles, myoutfile])
+    spatial_outfile = extra_file + '.nc'
+    spatial_outfile = os.path.join(outdir, spatial_dir, os.path.split(spatial_outfile)[-1])
+    cmd_1 = ' '.join(['ncrcat -O -6 -h', tmp_files, spatial_outfile])
     cmd_2 = ' '.join(['ncks -O -4', os.path.join(outdir, state_dir, outfile),
                       os.path.join(outdir, state_dir, outfile)])
-    post_cmd = '\n'.join([cmd_1, cmd_2])
+    #post_cmd = '\n'.join([cmd_1, cmd_2])
+    post_cmd = cmd_1
     post_cmd = post_cmd+'\n'
 
-    return pism_cmd, post_cmd
+    other_dict = merge_dicts(stress_balance_params_dict,
+                             climate_params_dict,
+                             ocean_params_dict,
+                             hydro_params_dict,
+                             calving_params_dict)
+    ela_cmd = generate_ela_cmd(pism_prefix=' '.join([mpido, pism_exec]),
+                               start_file=os.path.join(outdir, state_dir, outfile),
+                               time=end_year,
+                               postproc_dir=os.path.join(outdir, postproc_dir),
+                               tmp_dir=os.path.join(outdir, tmp_dir),
+                               other_dict=other_dict)
+
+    cmd = ['cp', params_file, os.path.join(outdir, initial_dir, '{}_params.txt'.format(outfile_base))]
+    sub.call(cmd)
+    cmd = ['cp', start_file, os.path.join(outdir, initial_dir, 'initial_{}.nc'.format(outfile_base))]
+    sub.call(cmd)
+
+    return header, pism_cmd, post_cmd, ela_cmd
 
 
 def merge_dicts(*dict_args):
@@ -175,6 +201,24 @@ def merge_dicts(*dict_args):
     for dictionary in dict_args:
         result.update(dictionary)
     return result
+
+def generate_outfile_name(params):
+    abbr = {'stress_balance': 'sb',
+            'air_temp_mean_annual': 'T',
+            'precipitation': 'P',
+            'start_year': 's',
+            'end_year': 'e'}
+
+    outfile = params.read('outfile', 'str')
+    outfile = os.path.splitext(outfile)[0]
+    name_options = params.read('name_options', 'str')
+    name_dict = OrderedDict()
+    for key in name_options:
+        name_dict[abbr[key]] = params.read(key, 'str')
+    postfix = '_'.join([k+'_'+v for k, v in name_dict.items()])
+    outfile = outfile + '_' + postfix + '.nc'
+
+    return outfile
 
 def generate_grid_description(start_file, bootstrap=False):
     dem_data = Dataset(start_file, 'r')
@@ -201,7 +245,7 @@ def generate_grid_description(start_file, bootstrap=False):
         mzb = 6
 
     vertical_grid = OrderedDict()
-    vertical_grid['Lz'] = 2000
+    vertical_grid['Lz'] = 5000
     vertical_grid['Lbz'] = 2000
     vertical_grid['z_spacing'] = 'equal'
     vertical_grid['Mz'] = mz
@@ -318,11 +362,49 @@ def generate_scalar_ts(outfile, step, start=None, end=None, odir=None):
 
     return params_dict
 
+def generate_ela_cmd(pism_prefix=None, start_file=None, time=None, postproc_dir=None, tmp_dir=None, other_dict=None):
+    if pism_prefix is None or start_file is None or time is None or postproc_dir is None or tmp_dir is None:
+        sys.exit("Missing arguments")
+    
+    file_name = os.path.split(start_file)[1]
+    file_name = os.path.splitext(file_name)[0]
+
+    ela_params_dict = OrderedDict()
+    ela_params_dict['i'] = start_file
+    ela_params_dict['ys'] = 0.0
+    ela_params_dict['ye'] = 1.0
+    ela_params_dict['o'] = os.path.join(tmp_dir, 'mb_{}_at_{}.nc'.format(file_name, time))
+    ela_params_dict['extra_file'] = os.path.join(tmp_dir, 'mb_ts_{}_at_{}'.format(file_name, time))
+    ela_params_dict['extra_split'] = ''
+    ela_params_dict['extra_times'] = 0.1
+    ela_params_dict['extra_vars'] = 'climatic_mass_balance'
+
+    if other_dict is not None:
+        ela_params_dict = merge_dicts(ela_params_dict, other_dict)
+
+    ela_params = ' '.join([' '.join(['-' + k, str(v)]) for k, v in ela_params_dict.items()])
+
+    pism_cmd = ' '.join([pism_prefix, ela_params, '>',
+                         os.path.join(tmp_dir, 'log_mb_{}_at_{}.log 2>&1'.format(file_name, time)), '\n'])
+
+    extra_file = ela_params_dict['extra_file']
+    exstep = ela_params_dict['extra_times']
+    tmp_files = ' '.join(['{}_{:.3f}.nc'.format(extra_file, k) \
+                        for k in np.arange(0.0+exstep, 1.0, exstep)])
+    spatial_outfile = extra_file + '.nc'
+    spatial_outfile = os.path.join(postproc_dir, os.path.split(spatial_outfile)[-1])
+    cmd = ' '.join(['ncrcat -O -6 -h', tmp_files, spatial_outfile])
+    cmd = cmd + '\n'
+    
+    ela_cmd = '\n'.join([pism_cmd, cmd])
+
+    return ela_cmd
+
 def make_batch_header(system, cores, walltime):
     batch_system_list = {}
 
     batch_system_list['debug'] = {'job_id': 'test'}
-    batch_system_list['debug']['header'] = '#!/bin/bash'
+    batch_system_list['debug']['header'] = '#!/bin/bash\n'
 
     batch_system_list['keeling'] = {'job_id': 'SLURM_JOBID'}
     header = """#!/bin/bash
@@ -336,10 +418,11 @@ def make_batch_header(system, cores, walltime):
 
 module list
 cd $SLURM_SUBMIT_DIR
+
 """.format(cores=cores, walltime=walltime)
     batch_system_list['keeling']['header'] = header
 
-    return batch_system_list[system]
+    return batch_system_list[system]['header']
 
 
 if __name__ == '__main__':
