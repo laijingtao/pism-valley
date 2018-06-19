@@ -42,12 +42,13 @@ def generate_pism_cmd(*args, **kwargs):
     state_dir = 'state'
     scalar_dir = 'scalar'
     spatial_dir = 'spatial'
+    erosion_dir = 'erosion'
     postproc_dir = 'postproc'
     initial_dir = 'initial'
     tmp_dir = 'tmp'
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
-    for subdir in [scalar_dir, spatial_dir, state_dir, postproc_dir, initial_dir, tmp_dir]:
+    for subdir in [scalar_dir, spatial_dir, state_dir, erosion_dir, postproc_dir, initial_dir, tmp_dir]:
         if not os.path.isdir(os.path.join(outdir, subdir)):
             os.mkdir(os.path.join(outdir, subdir))
 
@@ -365,7 +366,7 @@ def generate_scalar_ts(outfile, step, start=None, end=None, odir=None):
 def generate_ela_cmd(pism_prefix=None, start_file=None, time=None, postproc_dir=None, tmp_dir=None, other_dict=None):
     if pism_prefix is None or start_file is None or time is None or postproc_dir is None or tmp_dir is None:
         sys.exit("Missing arguments")
-    
+
     file_name = os.path.split(start_file)[1]
     file_name = os.path.splitext(file_name)[0]
 
@@ -395,7 +396,7 @@ def generate_ela_cmd(pism_prefix=None, start_file=None, time=None, postproc_dir=
     spatial_outfile = os.path.join(postproc_dir, os.path.split(spatial_outfile)[-1])
     cmd = ' '.join(['ncrcat -O -6 -h', tmp_files, spatial_outfile])
     cmd = cmd + '\n'
-    
+
     ela_cmd = '\n'.join([pism_cmd, cmd])
 
     return ela_cmd
