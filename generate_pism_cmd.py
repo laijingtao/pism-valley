@@ -377,7 +377,7 @@ def generate_ela_cmd(pism_prefix=None, start_file=None, time=None, postproc_dir=
     ela_params_dict['extra_file'] = os.path.join(tmp_dir, 'mb_ts_{}_at_{}'.format(file_name, time))
     ela_params_dict['extra_split'] = ''
     ela_params_dict['extra_times'] = 0.1
-    ela_params_dict['extra_vars'] = 'climatic_mass_balance'
+    ela_params_dict['extra_vars'] = 'climatic_mass_balance,thk,usurf'
 
     if other_dict is not None:
         ela_params_dict = merge_dicts(ela_params_dict, other_dict)
