@@ -13,7 +13,8 @@ except:
     import subprocess as sub
 
 def update_topg(state_file=None, spatial_file=None, outfile=None, k_g=1e-4, dt=100):
-    cmd = ['ncks', '-v', 'thk,topg', '-O', state_file, outfile]
+    #cmd = ['ncks', '-v', 'thk,topg', '-O', state_file, outfile]
+    cmd = ['cp', state_file, outfile]
     sub.call(cmd)
 
     spatial_data = Dataset(spatial_file, 'r')

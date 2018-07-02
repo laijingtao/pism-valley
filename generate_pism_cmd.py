@@ -127,6 +127,12 @@ def generate_pism_cmd(*args, **kwargs):
     #climate_params_dict['atmosphere_delta_T_file'] = atmosphere_paleo_file,
     #climate_params_dict['atmosphere_frac_P_file'] = atmosphere_paleo_file
 
+    # bed deformation
+    beddef_params_dict = OrderedDict()
+    do_erosion = params.read('erosion', 'bool')
+    if do_erosion:
+        beddef_params_dict['erosion'] = ''
+
     # hydrology diffuse
     hydro_params_dict = OrderedDict()
     hydro_params_dict['hydrology'] = 'null'
@@ -149,6 +155,7 @@ def generate_pism_cmd(*args, **kwargs):
                                   grid_params_dict,
                                   stress_balance_params_dict,
                                   climate_params_dict,
+                                  beddef_params_dict,
                                   ocean_params_dict,
                                   hydro_params_dict,
                                   calving_params_dict,
